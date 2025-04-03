@@ -1,13 +1,17 @@
 from flask import Flask, render_template, request, jsonify, session
 import os
+import PIL.Image
+from dotenv import load_dotenv
 from google import genai
 from google.genai import types
-import PIL.Image
 import json
 import secrets
-import textwrap
 import uuid
+import textwrap 
 from datetime import datetime
+
+# 載入環境變數
+load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = secrets.token_hex(16)
@@ -19,7 +23,7 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs('conversations', exist_ok=True)
 
 # Configure Gemini API
-GEMINI_API_KEY = "AIzaSyAGxnOv00AxrOfIYbEs8oOZBQwYisZ5u2I" 
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 client = genai.Client(api_key=GEMINI_API_KEY)
 model = "gemini-2.0-flash-exp-image-generation"
 
@@ -61,7 +65,7 @@ def get_artwork_prompt():
     - 描述的長度應該適中，既要詳細又不冗長，讓讀者能夠快速理解畫作的內容。
     - 提到畫面中的物件時，請用上、下、左、右、遠、近來描述該物件在畫面中的絕對位置。
     - 使用更具象化、可觸知的描述，用比喻與觸覺可想像的形容，讓讀者能夠在腦海中形成清晰的畫面。
-    - 適度引導聽者想像畫面可能的場景或情境，但避免主觀臆測。
+    - 適度引導聽者想像畫面可能的場景或情境，但避免主觀臆測.
         
     ## 口述影像描述順序
     1. 完形與整體印象
@@ -111,7 +115,7 @@ def analyze_artwork(image_path, color_impressions=None):
         model=model,
         contents=[user_prompt, image],
         config=types.GenerateContentConfig(
-            temperature=0,
+            temperature=1,
             response_mime_type='application/json'
         )
     )
