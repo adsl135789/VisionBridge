@@ -8,18 +8,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const loadingOverlay = document.getElementById('loadingOverlay');
     const uploadedImage = document.getElementById('uploadedImage');
     const descriptionText = document.getElementById('descriptionText');
-    const conceptionText = document.getElementById('conceptionText');
-    const objectsList = document.getElementById('objectsList');
-    const tabButtons = document.querySelectorAll('.tab-button');
-    const tabContents = document.querySelectorAll('.tab-content');
     const conversationHistory = document.getElementById('conversationHistory');
     const questionInput = document.getElementById('questionInput');
     const askButton = document.getElementById('askButton');
 
-    // New element references
+    // 添加顏色印象輸入元素引用
     const redImpression = document.getElementById('redImpression');
     const greenImpression = document.getElementById('greenImpression');
     const blueImpression = document.getElementById('blueImpression');
+    
+    // Add country selection element reference
+    const countrySelect = document.getElementById('countrySelect');
     const generatePersonalizedBtn = document.getElementById('generatePersonalizedBtn');
     const personalizedDescription = document.getElementById('personalizedDescription');
     
@@ -36,7 +35,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let artworkData = null;
     let hasPersonalizedDescription = false;
     let personalizedDescriptionText = '';
+    let selectedCountry = ''; // Add variable to store selected country
     let interpretationConfirmed = false;
+    let conversationId = null; // Add global variable to store conversation_id
 
     // Event listeners for drag and drop
     ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
@@ -77,18 +78,17 @@ document.addEventListener('DOMContentLoaded', () => {
     // Add event listener for personalized description
     generatePersonalizedBtn.addEventListener('click', generatePersonalizedDescription);
 
-    // Tab functionality
-    tabButtons.forEach(button => {
-        button.addEventListener('click', () => {
-            const tabName = button.dataset.tab;
-            
-            tabButtons.forEach(btn => btn.classList.remove('active'));
-            tabContents.forEach(content => content.classList.remove('active'));
-            
-            button.classList.add('active');
-            document.getElementById(tabName).classList.add('active');
-        });
+    // Listen for country selection changes
+    countrySelect.addEventListener('change', function() {
+        selectedCountry = this.value;
+        // Enable/disable personalized description generation button
+        updateGenerateButtonState();
     });
+
+    // 更新生成按鈕狀態的函數
+    function updateGenerateButtonState() {
+        generatePersonalizedBtn.disabled = !selectedCountry;
+    }
 
     // Handle file drop
     function handleDrop(e) {
@@ -135,21 +135,30 @@ document.addEventListener('DOMContentLoaded', () => {
         const formData = new FormData();
         formData.append('file', selectedFile);
         
-        // No longer need to get color impressions during initial upload
-        // as they've been removed from the first page
-        formData.append('color_impressions', JSON.stringify({}));
+        // 收集顏色印象到一個對象中
+        const colorImpressions = {
+            red: redImpression.value.trim(),
+            green: greenImpression.value.trim(),
+            blue: blueImpression.value.trim()
+        };
+        
+        formData.append('color_impressions', JSON.stringify(colorImpressions));
         
         // Show loading overlay
         loadingOverlay.classList.remove('hidden');
         
         fetch('/upload', {
             method: 'POST',
-            body: formData
+            body: formData,
+            credentials: 'same-origin'  // Ensure cookies are sent and received
         })
         .then(response => response.json())
         .then(data => {
             if (data.success) {
                 artworkData = data.data;  // Store artwork data for later use
+                // Save conversation_id
+                conversationId = data.conversation_id || data.data.conversation_id;
+                console.log("接收到的conversation_id: ", conversationId);
                 displayResults(data);
             } else {
                 alert('上傳失敗: ' + data.error);
@@ -173,33 +182,8 @@ document.addEventListener('DOMContentLoaded', () => {
         // Set the image
         uploadedImage.src = data.image_url;
         
-        // Fill in the analysis data
+        // Fill in the analysis data - only description now
         descriptionText.textContent = data.data.description;
-        conceptionText.textContent = data.data.artistic_conception;
-        
-        // Create object tags
-        objectsList.innerHTML = '';
-        if (data.data.object && Array.isArray(data.data.object)) {
-            data.data.object.forEach(obj => {
-                for (const [item, color] of Object.entries(obj)) {
-                    const tag = document.createElement('div');
-                    tag.className = 'object-tag';
-                    
-                    // Apply color styling to the tag
-                    const colorValue = getColorValue(color);
-                    
-                    // Apply color as background with slight transparency
-                    tag.style.backgroundColor = `${colorValue}30`; // 30 is hex for ~20% opacity
-                    tag.style.borderColor = colorValue;
-                    
-                    tag.innerHTML = `
-                        <span class="color-dot" style="background-color: ${colorValue};"></span>
-                        <span style="color: #2d3748;">${item}</span>
-                    `;
-                    objectsList.appendChild(tag);
-                }
-            });
-        }
         
         // Don't add initial assistant message yet - wait for user to choose interpretation type
         conversationContainer.classList.add('hidden');
@@ -235,9 +219,9 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Add initial message based on interpretation type
         if (personalizedInterpretation.checked) {
-            addMessage('assistant', `根據你的顏色印象，我對這幅畫作有了個人化的解讀：\n\n${personalizedDescriptionText}\n\n你可以問我關於這幅畫的任何問題。`);
+            addMessage('assistant', `根據你的所屬國家，我對這幅畫作有了個人化的解讀：\n\n${personalizedDescriptionText}\n\n你可以問我關於這幅畫的任何問題。`);
         } else {
-            addMessage('assistant', `我已經分析了這幅畫作，以下是基本描述：\n\n${artworkData.description}\n\n意境：${artworkData.artistic_conception}\n\n你可以問我關於這幅畫的任何細節。`);
+            addMessage('assistant', `我已經分析了這幅畫作，以下是基本描述：\n\n${artworkData.description}\n\n你可以問我關於這幅畫的任何細節。`);
         }
         
         // Disable the interpretation choice sections
@@ -255,81 +239,11 @@ document.addEventListener('DOMContentLoaded', () => {
         questionInput.focus();
     }
 
-    // Helper function to convert color names to hex values
-    function getColorValue(colorName) {
-        const colorMap = {
-            // Basic colors
-            '紅色': '#e53e3e',
-            '藍色': '#3182ce',
-            '綠色': '#38a169',
-            '黃色': '#ecc94b',
-            '橙色': '#ed8936',
-            '紫色': '#805ad5',
-            '粉色': '#ed64a6',
-            '棕色': '#8b4513',
-            '灰色': '#718096',
-            '黑色': '#2d3748',
-            '白色': '#ffffff',
-            
-            // Light variants
-            '淺紅色': '#fc8181',
-            '淺藍色': '#63b3ed',
-            '淺綠色': '#68d391',
-            '淺黃色': '#faf089',
-            '淺橙色': '#fbd38d',
-            '淺紫色': '#b794f4',
-            '淺粉色': '#f687b3',
-            '淺棕色': '#bc8a5f',
-            '淺灰色': '#cbd5e0',
-            
-            // Dark variants
-            '深紅色': '#c53030',
-            '深藍色': '#2c5282',
-            '深綠色': '#2f855a',
-            '深黃色': '#d69e2e',
-            '深橙色': '#c05621',
-            '深紫色': '#6b46c1',
-            '深粉色': '#b83280',
-            '深棕色': '#654321',
-            '深灰色': '#4a5568',
-        };
-        
-        // Try to find the exact match
-        for (const [key, value] of Object.entries(colorMap)) {
-            if (colorName.includes(key)) {
-                return value;
-            }
-        }
-        
-        // Default fallback
-        return '#718096';
-    }
-
-    // Helper function to determine if text should be white or black based on background color
-    function getContrastColor(hexColor) {
-        // Convert hex to RGB
-        const r = parseInt(hexColor.slice(1, 3), 16);
-        const g = parseInt(hexColor.slice(3, 5), 16);
-        const b = parseInt(hexColor.slice(5, 7), 16);
-        
-        // Calculate perceived brightness (YIQ equation)
-        const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
-        
-        // Return black or white depending on brightness
-        return (yiq >= 150) ? '#2d3748' : '#ffffff';
-    }
-
-    // Generate personalized description based on color impressions
+    // Generate personalized description based on selected country
     function generatePersonalizedDescription() {
-        // Get current color impressions
-        const colorImpressions = {
-            red: redImpression.value.trim(),
-            green: greenImpression.value.trim(),
-            blue: blueImpression.value.trim()
-        };
-        
-        if (!colorImpressions.red && !colorImpressions.green && !colorImpressions.blue) {
-            alert('請至少填寫一種顏色的印象');
+        // Check if a country is selected
+        if (!selectedCountry) {
+            alert('請選擇您的所屬國家');
             return;
         }
         
@@ -337,13 +251,26 @@ document.addEventListener('DOMContentLoaded', () => {
         generatePersonalizedBtn.disabled = true;
         personalizedDescription.textContent = '正在生成個人化描述...';
         personalizedContent.classList.remove('hidden');
-        
+
+        // 收集顏色印象
+        const colorImpressions = {
+            red: redImpression.value.trim(),
+            green: greenImpression.value.trim(),
+            blue: blueImpression.value.trim()
+        };
+
+        console.log("conversation_id: ", conversationId);
         fetch('/personalize', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ color_impressions: colorImpressions })
+            body: JSON.stringify({ 
+                personalized_data: selectedCountry,
+                conversation_id: conversationId,  // Add conversation_id
+                color_impressions: colorImpressions  // 添加顏色印象數據
+            }),
+            credentials: 'same-origin'  // Ensure cookies are sent and received
         })
         .then(response => response.json())
         .then(data => {
@@ -389,7 +316,8 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Prepare request payload
         const payload = {
-            question: question
+            question: question,
+            conversation_id: conversationId  // Add conversation_id to the request
         };
         
         // If using personalized interpretation, include it in the request
@@ -403,7 +331,8 @@ document.addEventListener('DOMContentLoaded', () => {
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify(payload)
+            body: JSON.stringify(payload),
+            credentials: 'same-origin'  // Ensure cookies are sent and received
         })
         .then(response => response.json())
         .then(data => {

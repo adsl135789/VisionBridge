@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>視覺橋樑 - 畫作描述分析</title>
+    <title>Vision Bridge - 你的藝術橋梁</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;500;700&family=Playfair+Display:ital,wght@0,500;0,700;1,400&display=swap" rel="stylesheet">
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>視覺橋樑</h1>
+            <h1>Vision Bridge</h1>
             <p>探索藝術視界，聆聽畫作之聲</p>
         </header>
 
@@ -37,20 +37,9 @@
                     </div>
 
                     <div class="analysis-results">
-                        <div class="tab-container">
-                            <button class="tab-button active" data-tab="description">畫作描述</button>
-                            <button class="tab-button" data-tab="conception">意境</button>
-                            <button class="tab-button" data-tab="objects">物件列表</button>
-                        </div>
-
-                        <div class="tab-content active" id="description">
+                        <h2>畫作描述</h2>
+                        <div class="description-content">
                             <p id="descriptionText"></p>
-                        </div>
-                        <div class="tab-content" id="conception">
-                            <p id="conceptionText"></p>
-                        </div>
-                        <div class="tab-content" id="objects">
-                            <div id="objectsList" class="objects-container"></div>
                         </div>
                     </div>
                 </div>
@@ -78,32 +67,43 @@
                     </div>
                     
                     <div id="colorImpressionSection" class="hidden">
-                        <div class="color-input-group">
-                            <div class="color-input">
-                                <label for="redImpression">
-                                    <span class="color-dot" style="background-color: #e53e3e;"></span>
-                                    紅色給您的感覺：
-                                </label>
-                                <input type="text" id="redImpression" placeholder="例如：熱情、活力、激情...">
-                            </div>
+                        <div class="country-selection">
+                            <label for="countrySelect">請選擇您的所屬國家或文化背景：</label>
+                            <select id="countrySelect" class="country-select">
+                                <option value="">請選擇...</option>
+                                <option value="日本">日本</option>
+                                <option value="韓國">韓國</option>
+                                <option value="美國">美國</option>
+                                <option value="歐洲">歐洲</option>
+                                <option value="東南亞">東南亞</option>
+                                <option value="非洲">非洲</option>
+                                <option value="大中華民族">大中華民族</option>
+                            </select>
+                        </div>
+
+                        <!-- 新增顏色印象輸入欄位 -->
+                        <div class="color-impressions">
+                            <h3>個人對顏色的印象（選填）</h3>
+                            <p class="color-intro">請分享您對以下顏色的個人印象或聯想，這將幫助我們生成更符合您感受的描述</p>
                             
-                            <div class="color-input">
-                                <label for="greenImpression">
-                                    <span class="color-dot" style="background-color: #48bb78;"></span>
-                                    綠色給您的感覺：
-                                </label>
-                                <input type="text" id="greenImpression" placeholder="例如：自然、平靜、生機...">
-                            </div>
-                            
-                            <div class="color-input">
-                                <label for="blueImpression">
-                                    <span class="color-dot" style="background-color: #4299e1;"></span>
-                                    藍色給您的感覺：
-                                </label>
-                                <input type="text" id="blueImpression" placeholder="例如：冷靜、深邃、自由...">
+                            <div class="color-input-group">
+                                <div class="color-input">
+                                    <label><span class="color-dot" style="background-color: #e53935;"></span>對於紅色的印象：</label>
+                                    <input type="text" id="redImpression" placeholder="例如：熱情、活力、溫暖...">
+                                </div>
+                                
+                                <div class="color-input">
+                                    <label><span class="color-dot" style="background-color: #43a047;"></span>對於綠色的印象：</label>
+                                    <input type="text" id="greenImpression" placeholder="例如：自然、生機、平靜...">
+                                </div>
+                                
+                                <div class="color-input">
+                                    <label><span class="color-dot" style="background-color: #1e88e5;"></span>對於藍色的印象：</label>
+                                    <input type="text" id="blueImpression" placeholder="例如：沉穩、寧靜、深沉...">
+                                </div>
                             </div>
                         </div>
-                        
+
                         <button id="generatePersonalizedBtn" class="secondary-button">生成個人化解讀</button>
                         <div class="personalized-content hidden">
                             <p id="personalizedDescription"></p>
@@ -130,7 +130,7 @@
         </main>
 
         <footer>
-            <p>© 2023 視覺橋樑 | 使用 Gemini AI 技術提供支援</p>
+            <p>© 2025 Vision Bridge | 使用 Gemini AI 技術提供支援</p>
         </footer>
     </div>
 

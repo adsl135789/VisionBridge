@@ -1,22 +1,33 @@
-from flask import Flask, render_template, request, jsonify, session
 import os
 import PIL.Image
-from dotenv import load_dotenv
-from google import genai
-from google.genai import types
 import json
 import secrets
 import uuid
 import textwrap 
-from datetime import datetime
+from datetime import datetime, timedelta  # 修改這一行，直接導入 timedelta
+from dotenv import load_dotenv
+from google import genai
+from google.genai import types
+from flask import Flask, render_template, request, jsonify
+from utils.mongodb_helper import connect_db, close_db, query_color_descriptions
+
 
 # 載入環境變數
 load_dotenv()
+connect_db()
 
 app = Flask(__name__)
 app.secret_key = secrets.token_hex(16)
 app.config['UPLOAD_FOLDER'] = 'static/uploads'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max upload
+
+# 增加session設定以確保cookie正確設置
+app.config['SESSION_TYPE'] = 'filesystem'
+app.config['SESSION_PERMANENT'] = True
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=1)  # 修改為直接使用 timedelta
+app.config['SESSION_USE_SIGNER'] = True
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SECURE'] = False  # 開發環境設為False，生產環境設為True
 
 # Create uploads and conversations directories
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -30,6 +41,9 @@ model = "gemini-2.0-flash-exp-image-generation"
 # Server-side storage for conversations
 # In a production app, this should be replaced with a database
 conversation_store = {}
+
+# 新增一個全局字典來追蹤用戶的 conversation_id
+user_conversation_map = {}
 
 # Helper functions for conversation storage
 def save_conversation(conversation_id, data):
@@ -53,6 +67,29 @@ def get_conversation(conversation_id):
             return data
     except (FileNotFoundError, json.JSONDecodeError):
         return None
+
+# 新增函數來獲取用戶標識符
+def get_user_identifier():
+    """獲取用戶標識符，這裡使用 IP 地址"""
+    if request.headers.get('X-Forwarded-For'):
+        # 處理代理情況
+        ip = request.headers.get('X-Forwarded-For').split(',')[0]
+    else:
+        ip = request.remote_addr
+    return ip
+
+# 獲取當前用戶的 conversation_id
+def get_current_conversation_id():
+    """獲取當前用戶的 conversation_id"""
+    user_id = get_user_identifier()
+    return user_conversation_map.get(user_id)
+
+# 設置當前用戶的 conversation_id
+def set_current_conversation_id(conversation_id):
+    """設置當前用戶的 conversation_id"""
+    user_id = get_user_identifier()
+    user_conversation_map[user_id] = conversation_id
+    print(f"為用戶 {user_id} 設置 conversation_id: {conversation_id}")
 
 def get_artwork_prompt():
     return textwrap.dedent("""
@@ -90,23 +127,22 @@ def get_artwork_prompt():
     - 請用關鍵字來描述意境
     - 畫面給人的第一感覺是什麼？是寧靜的、壓抑的、歡快的、神祕的？
 
-    # 畫作物件
-    - 請列出畫面中的物件，並附上一種主要顏色就好。
-    - 請使用常見的基本色系 
-    - 格式：["實體":"顏色"]，例如:["樹木":"綠色"]，["天空":"藍色"]
+    # 畫作顏色
+    - 請列出畫作描述中有提到的顏色
 
     # 要求
     - 請勿用不確定的口吻描述，不確定的細節不必提到
-    - 請保留顏色的描述，例如「紅色的花朵」或「藍色的天空」，而不是「花朵」或「天空」。
+    - 請保留重要物件的顏色描述，例如「紅色的花朵」或「藍色的天空」，而不是「花朵」或「天空」。
+    - 請使用常見的基本色來形容，不要使用如「深色」、「淺色」等模糊的描述
     - 請直接輸出繁體中文的描述內容，不需要列點式描述，請用語意通順的一個段落描述畫面。
     - 請不要提到「觀者」等詞彙，請用第三人稱的方式描述畫面。
     - 請回傳JSON格式輸出，包含以下欄位：
         1. "description": "畫作描述"
         2. "artistic_conception" : "畫作意境"
-        3. "object": ["實體":"顏色"]
+        3. "color": ["顏色1", "顏色2", ...]
     """)
 
-def analyze_artwork(image_path, color_impressions=None):
+def analyze_artwork(image_path):
     """Analyze the uploaded artwork using Gemini API"""
     image = PIL.Image.open(image_path)
     user_prompt = get_artwork_prompt()
@@ -138,7 +174,7 @@ def analyze_artwork(image_path, color_impressions=None):
         "artwork_data": data,
         "image_path": image_path,
         "created_at": datetime.now().isoformat(),
-        "color_impressions": color_impressions or {},  # Store color impressions
+        "personalized_data": "",
         "conversation_history": [
             {
                 "role": "user", 
@@ -148,24 +184,28 @@ def analyze_artwork(image_path, color_impressions=None):
                 "role": "assistant", 
                 "content": f"我已經分析了這幅畫作，以下是基本描述：\n\n{data['description']}\n\n意境：{data['artistic_conception']}\n\n你可以問我關於這幅畫的任何細節。"
             }
-        ]
+        ],
+        "color_impressions": {}  # 新增一個空的顏色印象欄位
     }
+    # 使用全局變數存儲 conversation_id，而非 session
+    set_current_conversation_id(conversation_id)
+    print(f"在 analyze_artwork 中設置 conversation_id: {conversation_id}")
     
     # Save to server-side storage
     save_conversation(conversation_id, conversation_data)
     
-    # Store only the conversation ID in the session
-    session['conversation_id'] = conversation_id
-    
-    return data
+    return {**data, "conversation_id": conversation_id}
 
-def generate_personalized_description(color_impressions):
-    """Generate a personalized description based on color impressions"""
-    if 'conversation_id' not in session:
+def generate_personalized_description(personalized_data, color_impressions=None):
+    """Generate a personalized description based on the user's country and color impressions"""
+    # 獲取當前用戶的 conversation_id，而非從 session 中獲取
+    conversation_id = get_current_conversation_id()
+    print(f"當前用戶的 conversation_id: {conversation_id}")
+    
+    if not conversation_id:
         return {"error": "請先上傳和分析圖片"}
     
     # Get conversation data
-    conversation_id = session['conversation_id']
     conversation_data = get_conversation(conversation_id)
     
     if not conversation_data:
@@ -175,21 +215,50 @@ def generate_personalized_description(color_impressions):
     image_path = conversation_data['image_path']
     artwork_data = conversation_data['artwork_data']
     
-    # Update color impressions in storage
-    conversation_data['color_impressions'] = color_impressions
+    # 更新使用者的國家/文化背景和顏色印象
+    conversation_data['personalized_data'] = personalized_data
+    if color_impressions:
+        conversation_data['color_impressions'] = color_impressions
     save_conversation(conversation_id, conversation_data)
     
-    # Create prompt for personalized description
-    color_info = ""
-    for color, impression in color_impressions.items():
-        if impression:
-            color_info += f"- {color}色：{impression}\n"
-    print(f"color_info: {color_info}")
-    if not color_info:
-        return {"error": "請至少提供一種顏色的印象"}
+    # 獲取文化相關的顏色描述
+    cultural_data = ""
+    try:
+        # 從畫作資料中獲取顏色列表
+        colors = artwork_data["color"]
+        
+        print(f"Colors from artwork data: {colors}")
+        
+        # 查詢顏色描述
+        color_descriptions = query_color_descriptions(personalized_data, colors)
+        
+        if color_descriptions:
+            for color, descriptions in color_descriptions.items():
+                cultural_data += f"## {color}色\n"
+                for desc in descriptions:
+                    cultural_data += f"- {desc}\n"
+        print(f"文化顏色描述: {cultural_data}")
+    except Exception as e:
+        print(f"獲取文化顏色描述時出錯: {str(e)}")
+    
+    # 添加使用者的顏色印象到提示中
+    user_color_impressions = ""
+    if color_impressions:
+        user_color_impressions += "# 使用者對顏色的個人印象\n"
+        if color_impressions.get('red'):
+            user_color_impressions += f"## 紅色\n- {color_impressions['red']}\n"
+        if color_impressions.get('green'):
+            user_color_impressions += f"## 綠色\n- {color_impressions['green']}\n"
+        if color_impressions.get('blue'):
+            user_color_impressions += f"## 藍色\n- {color_impressions['blue']}\n"
     
     prompt = textwrap.dedent(f"""
-    請根據用戶對顏色的個人印象，重新解讀這幅畫作。
+    # 任務
+    請根據此盲人的文化背景和個人對顏色的印象，對畫作的基本描述做修改，融入{personalized_data}文化對於畫作的解讀視角
+    - 依照口述影像原則來修改這幅畫的內容，目標是要依照文字就能讓聽者想像此畫作。
+    - 請將基本描述中出現的顏色用{personalized_data}文化對於這些顏色的描述和使用者的個人色彩印象來補充/替換，請從中選擇最適合的描述來補充/替換。
+    - 若基本描述中有顏色描述中沒有提到顏色，請依照畫作意境中合適的感覺來將補充/替換該顏色成盲人友善的描述。
+    - 請直接輸出繁體中文的描述內容，不需要列點式描述，請用語意通順的一個段落描述畫面。
     
     # 畫作基本資訊
     ## 基本描述
@@ -198,17 +267,10 @@ def generate_personalized_description(color_impressions):
     ## 意境
     {artwork_data["artistic_conception"]}
     
-    ## 畫中物件與顏色
-    {json.dumps(artwork_data["object"], ensure_ascii=False)}
+    # {personalized_data}文化中的顏色描述
+    {cultural_data}
     
-    # 用戶對三原色的個人印象
-    {color_info}
-    
-    # 任務
-    請根據用戶對三原色的個人印象，對畫作的基本描述做修改，並保留基本描述的架構，使描述更加個人化
-    - 基於用戶對三原色的印象，請將基本描述中所有顏色形容詞替換
-    - 不需要列點式描述，請用語意通順的一個段落描述畫面
-    - 描述應當流暢自然，有個人風格，不要過於生硬或機械
+    {user_color_impressions}
     """)
     
     try:
@@ -217,21 +279,25 @@ def generate_personalized_description(color_impressions):
         response = client.models.generate_content(
             model=model,
             contents=[prompt, image],
-            config=types.GenerateContentConfig(temperature=0.7)
+            config=types.GenerateContentConfig(temperature=1)
         )
         
         personalized_description = response.text
+        conversation_data["artwork_data"]['personalized_description'] = personalized_description
+        save_conversation(conversation_id, conversation_data)
         return {"personalized_description": personalized_description}
     except Exception as e:
         return {"error": f"生成個人化描述時發生錯誤: {str(e)}"}
 
-def ask_follow_up_question(question, personalized_description=None, use_personalized=False):
+def ask_follow_up_question(question):
     """Process follow-up questions about the artwork"""
-    if 'conversation_id' not in session:
+    # 獲取當前用戶的 conversation_id，而非從 session 中獲取
+    conversation_id = get_current_conversation_id()
+    
+    if not conversation_id:
         return {"error": "請先上傳和分析圖片"}
     
     # Get conversation data from server-side storage
-    conversation_id = session['conversation_id']
     conversation_data = get_conversation(conversation_id)
     
     if not conversation_data:
@@ -240,13 +306,14 @@ def ask_follow_up_question(question, personalized_description=None, use_personal
     # Get key data
     image_path = conversation_data['image_path']
     artwork_data = conversation_data['artwork_data']
+    personalized_description = conversation_data['artwork_data'].get('personalized_description', None)
     conversation_history = conversation_data['conversation_history']
     
     # Add user question to history
     conversation_history.append({"role": "user", "content": question})
     
     # Create context from conversation history
-    if use_personalized and personalized_description:
+    if personalized_description is not None:
         context = textwrap.dedent(f'''
                                 基於我們之前的對話和畫作圖像，不需要列點式描述，請用語意通順的一個段落回答問題。
                                 請只回答與畫作的畫面直接相關的內容，如畫中的細節、技術、內容。
@@ -312,13 +379,6 @@ def upload_file():
     if file.filename == '':
         return jsonify({"error": "No selected file"}), 400
     
-    # Get color impressions if provided
-    color_impressions = {}
-    if 'color_impressions' in request.form:
-        try:
-            color_impressions = json.loads(request.form['color_impressions'])
-        except json.JSONDecodeError:
-            pass
     
     if file:
         # Save the file
@@ -326,16 +386,35 @@ def upload_file():
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(filepath)
         
+        # 獲取顏色印象資料
+        color_impressions = {}
+        if 'color_impressions' in request.form:
+            try:
+                color_impressions = json.loads(request.form['color_impressions'])
+            except:
+                color_impressions = {}
+        
         # Analyze the artwork
         try:
-            data = analyze_artwork(filepath, color_impressions)
+            data = analyze_artwork(filepath)
+            
+            # 如果獲取到顏色印象資料，更新到會話中
+            if color_impressions:
+                conversation_id = data.get('conversation_id')
+                conversation_data = get_conversation(conversation_id)
+                if conversation_data:
+                    conversation_data['color_impressions'] = color_impressions
+                    save_conversation(conversation_id, conversation_data)
+            
             return jsonify({
                 "success": True, 
                 "data": data,
-                "image_url": f"/static/uploads/{filename}"
+                "image_url": f"/static/uploads/{filename}",
+                "conversation_id": data.get('conversation_id')  # 返回conversation_id到前端
             })
         except Exception as e:
             return jsonify({"error": str(e)}), 500
+
 
 @app.route('/ask', methods=['POST'])
 def ask_question():
@@ -343,31 +422,49 @@ def ask_question():
     if not data or 'question' not in data:
         return jsonify({"error": "No question provided"}), 400
     
-    personalized_description = data.get('personalized_description', None)
-    use_personalized = data.get('use_personalized', False)
+    # 如果前端提供了 conversation_id，則使用它來恢復對話狀態
+    if 'conversation_id' in data and not get_current_conversation_id():
+        conversation_id = data['conversation_id']
+        set_current_conversation_id(conversation_id)
+        print(f"從請求中恢復 conversation_id: {conversation_id}")
     
-    result = ask_follow_up_question(
-        data["question"], 
-        personalized_description=personalized_description,
-        use_personalized=use_personalized
-    )
+    print(f"在 ask_question 中的 conversation_id: {get_current_conversation_id()}")
+
+    
+    result = ask_follow_up_question(data["question"])
     return jsonify(result)
 
 @app.route('/personalize', methods=['POST'])
 def personalize():
     data = request.get_json()
-    if not data or 'color_impressions' not in data:
-        return jsonify({"error": "No color impressions provided"}), 400
+    if not data:
+        return jsonify({"error": "未提供資料"}), 400
     
-    result = generate_personalized_description(data['color_impressions'])
+    # 檢查是否提供了國家/文化背景
+    personalized_data = data.get('personalized_data')
+    if not personalized_data:
+        return jsonify({"error": "未選擇國家/文化背景"}), 400
+    
+    # 獲取顏色印象資料
+    color_impressions = data.get('color_impressions', {})
+    
+    # 如果前端提供了 conversation_id，則使用它來恢復對話狀態
+    if 'conversation_id' in data and not get_current_conversation_id():
+        conversation_id = data['conversation_id']
+        set_current_conversation_id(conversation_id)
+        print(f"從請求中恢復 conversation_id: {conversation_id}")
+    
+    result = generate_personalized_description(personalized_data, color_impressions)
     return jsonify(result)
 
 @app.route('/history')
 def get_history():
-    if 'conversation_id' not in session:
+    # 獲取當前用戶的 conversation_id，而非從 session 中獲取
+    conversation_id = get_current_conversation_id()
+    
+    if not conversation_id:
         return jsonify({"history": []}), 404
     
-    conversation_id = session['conversation_id']
     conversation_data = get_conversation(conversation_id)
     
     if not conversation_data:
@@ -375,5 +472,6 @@ def get_history():
     
     return jsonify({"history": conversation_data['conversation_history']})
 
+    
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
