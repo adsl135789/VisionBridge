@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vision Bridge - 你的藝術橋梁</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;500;700&family=Playfair+Display:ital,wght@0,500;0,700;1,400&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Vision Bridge</h1>
+            <p>探索藝術視界，聆聽畫作之聲</p>
+        </header>
+
+        <main>
+            <section id="upload-section">
+                <div class="upload-container">
+                    <h2>上傳畫作</h2>
+                    <div class="drop-area" id="dropArea">
+                        <img src="{{ url_for('static', filename='img/upload-icon.svg') }}" alt="上傳" class="upload-icon">
+                        <p>拖曳檔案至此處或點擊上傳</p>
+                        <input type="file" id="fileInput" accept="image/*" hidden>
+                    </div>
+                    <button id="uploadButton" class="primary-button" disabled>開始分析</button>
+                </div>
+            </section>
+
+            <section id="results-section" class="hidden">
+                <div class="results-container">
+                    <div class="artwork-display">
+                        <h2>畫作分析</h2>
+                        <div class="artwork-image">
+                            <img id="uploadedImage" src="" alt="上傳的畫作">
+                        </div>
+                    </div>
+
+                    <div class="analysis-results">
+                        <h2>畫作描述</h2>
+                        <div class="description-content">
+                            <p id="descriptionText"></p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="interpretation-choice-container">
+                    <h2>選擇解讀方式</h2>
+                    <p class="choice-intro">請選擇您想要的畫作解讀方式，選擇後才能開始對話</p>
+                    
+                    <div class="interpretation-options">
+                        <div class="interpretation-option">
+                            <input type="radio" id="basicInterpretation" name="interpretationType" value="basic" checked>
+                            <label for="basicInterpretation">
+                                <h3>基本解讀</h3>
+                                <p>使用AI生成的標準畫作描述，立即開始對話</p>
+                            </label>
+                        </div>
+                        
+                        <div class="interpretation-option">
+                            <input type="radio" id="personalizedInterpretation" name="interpretationType" value="personalized">
+                            <label for="personalizedInterpretation">
+                                <h3>個人化解讀</h3>
+                                <p>根據您填寫的色彩印象生成個人化描述</p>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div id="colorImpressionSection" class="hidden">
+                        <div class="country-selection">
+                            <label for="countrySelect">請選擇您的所屬國家或文化背景：</label>
+                            <select id="countrySelect" class="country-select">
+                                <option value="">請選擇...</option>
+                                <option value="日本">日本</option>
+                                <option value="韓國">韓國</option>
+                                <option value="美國">美國</option>
+                                <option value="歐洲">歐洲</option>
+                                <option value="東南亞">東南亞</option>
+                                <option value="非洲">非洲</option>
+                                <option value="大中華民族">大中華民族</option>
+                            </select>
+                        </div>
+
+                        <!-- 新增顏色印象輸入欄位 -->
+                        <div class="color-impressions">
+                            <h3>個人對顏色的印象（選填）</h3>
+                            <p class="color-intro">請分享您對以下顏色的個人印象或聯想，這將幫助我們生成更符合您感受的描述</p>
+                            
+                            <div class="color-input-group">
+                                <div class="color-input">
+                                    <label><span class="color-dot" style="background-color: #e53935;"></span>對於紅色的印象：</label>
+                                    <input type="text" id="redImpression" placeholder="例如：熱情、活力、溫暖...">
+                                </div>
+                                
+                                <div class="color-input">
+                                    <label><span class="color-dot" style="background-color: #43a047;"></span>對於綠色的印象：</label>
+                                    <input type="text" id="greenImpression" placeholder="例如：自然、生機、平靜...">
+                                </div>
+                                
+                                <div class="color-input">
+                                    <label><span class="color-dot" style="background-color: #1e88e5;"></span>對於藍色的印象：</label>
+                                    <input type="text" id="blueImpression" placeholder="例如：沉穩、寧靜、深沉...">
+                                </div>
+                            </div>
+                        </div>
+
+                        <button id="generatePersonalizedBtn" class="secondary-button">生成個人化解讀</button>
+                        <div class="personalized-content hidden">
+                            <p id="personalizedDescription"></p>
+                        </div>
+                    </div>
+                    
+                    <button id="confirmInterpretationBtn" class="primary-button">確認並開始對話</button>
+                </div>
+
+                <div class="conversation-container hidden" id="conversation-container">
+                    <h2>提問與對話</h2>
+                    <div id="conversationHistory" class="conversation-history"></div>
+                    <div class="question-input">
+                        <textarea id="questionInput" placeholder="問些關於這幅畫的問題..." rows="3"></textarea>
+                        <button id="askButton" class="primary-button">提問</button>
+                    </div>
+                </div>
+            </section>
+
+            <div id="loadingOverlay" class="loading-overlay hidden">
+                <div class="spinner"></div>
+                <p>正在分析畫作，請稍候...</p>
+            </div>
+        </main>
+
+        <footer>
+            <p>© 2025 Vision Bridge | 使用 Gemini AI 技術提供支援</p>
+        </footer>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
